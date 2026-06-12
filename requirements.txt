@@ -1,0 +1,14 @@
+# Measured execution environment (air-gapped edge workstation)
+# Python 3.14.3 | CUDA 12.8 | NVIDIA GeForce RTX 5070 (12 GB)
+#
+# PyTorch family installs from the CUDA 12.8 wheel index. No onnx, tensorrt,
+# or torch_tensorrt packages are required or permitted (air-gapped constraint).
+torch==2.12.0.dev20260407+cu128
+torchvision==0.27.0.dev20260407+cu128
+numpy==2.4.3
+scipy==1.17.1
+matplotlib==3.10.8
+pillow==12.1.1
+scikit-learn==1.8.0
+# optional: GPU temperature logging in exp8 (falls back gracefully if absent)
+# nvidia-ml-py

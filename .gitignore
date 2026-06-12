@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+Results/
+Figures/
+casting_data/
+DAGM_Cleaned/
+DAGM 2007-Industrial Defect Detection Dataset/
+Kolektor/
+NEU-DET/
+NEU-DET_ByClass/
+*.log

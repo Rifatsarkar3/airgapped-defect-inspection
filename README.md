@@ -24,6 +24,10 @@ figure scripts.
 | `exp10_neudet_6class.py` | VI.G (single-seed run with t-SNE: NEU-DET, 6-class) | Fig. 9 panels |
 | `exp12_budget_sensitivity.py` | VI.G | Table 9 |
 | `gen_fig8_crossdomain.py`, `gen_fig9_combined.py` | VI.G | Figs. 8–9 |
+| `protocol_validation.py` | IV (gradient-flow gate) | accepts corrected SSF, rejects legacy term |
+| `exp13_gradient_alignment.py` | VI / Eqs. (3)–(4) | gradient alignment A(θ), η |
+| `exp14_broken_mystery.py` | VII (decomposition) | inert-term × initialization (2×2) |
+| `exp14b_selection.py` | VII (decomposition) | validation- vs test-epoch selection |
 | `data_prep/` | III | benchmark folder layouts |
 
 ## The SSF regularizer and its gradient-flow assertion

@@ -23,7 +23,7 @@ A_rec < 0 predicts the empirical recall penalty observed in the paired
 evaluation (Experiment 5).
 
 Both L_CE and the corrected feature-space L_SSF are imported verbatim from
-exp11_paired_validation.py, so this measures the exact loss pair the paper
+exp11_paired_validation_v2.py, so this measures the exact loss pair the paper
 reports. Two parameter states are evaluated: ImageNet-initialized (the shared
 start of both paired arms) and the deployed CE-trained champion.
 
@@ -36,7 +36,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import exp11_paired_validation as E
+import exp11_paired_validation_v2 as E
 
 DEVICE = E.DEVICE
 N_BATCHES = 30

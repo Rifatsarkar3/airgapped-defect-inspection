@@ -29,7 +29,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-import exp11_paired_validation as E
+import exp11_paired_validation_v2 as E
 
 DEVICE = E.DEVICE
 SEEDS = [200, 201, 202, 203, 204]

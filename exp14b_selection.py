@@ -27,7 +27,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-import exp11_paired_validation as E
+import exp11_paired_validation_v2 as E
 from exp14_broken_mystery import broken_ssf, make_model
 
 DEVICE = E.DEVICE

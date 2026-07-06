@@ -10,5 +10,7 @@ scipy==1.17.1
 matplotlib==3.10.8
 pillow==12.1.1
 scikit-learn==1.8.0
+pandas==2.3.3
+seaborn==0.13.2
 # optional: GPU temperature logging in exp8 (falls back gracefully if absent)
 # nvidia-ml-py

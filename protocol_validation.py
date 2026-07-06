@@ -20,7 +20,7 @@ import os
 import torch
 import torch.nn as nn
 
-import exp11_paired_validation as E
+import exp11_paired_validation_v2 as E
 from exp14_broken_mystery import broken_ssf
 
 DEVICE = E.DEVICE

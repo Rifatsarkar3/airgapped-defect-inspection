@@ -1,47 +1,28 @@
 """
-exp11_paired_validation.py — Corrected PGML vs Baseline Paired Validation
-==========================================================================
-Supersedes exp5/exp5b. Fixes three protocol defects found in the 2026-06-11
-audit (see archive/README.md):
+exp11_paired_validation_v2.py — Corrected PGML vs Baseline Paired Validation (Item 7a fix)
+============================================================================================
+Supersedes exp11_paired_validation.py. Identical protocol (validation-based epoch
+selection, single test evaluation per arm, n=30 shared-seed paired cycles) — the
+ONLY change is the positive-class definition in evaluate().
 
-  1. DETACHED PHYSICS LOSS — exp5/exp5b computed the SSF term under
-     torch.no_grad() on raw input pixels, so it had no gradient path to the
-     model. Here the Griffith gradient-energy hinge is applied to an
-     intermediate FEATURE MAP, making it differentiable w.r.t. the weights:
+Bug: casting_data/train/ sorts def_front (3,758 images) before ok_front (2,875
+images) alphabetically, so torchvision.ImageFolder assigns def_front=0, ok_front=1.
+The original evaluate() hardcoded p==1 & y==1 as "true positive", making the
+reported "recall"/"precision"/"F1" the OK/nominal class's statistics (the rate at
+which good parts are correctly passed), not the defective class's catch rate —
+the opposite of what the paper's "a missed defect is a safety failure" framing
+assumes throughout. Fixed here: positive class = defective (class 0).
 
-         L_phys = ReLU( E[||grad F(x)||_2 | OK] - E[||grad F(x)||_2 | def] + MARGIN )
-
-     where F(x) is the per-image standardized channel-mean of the
-     EfficientNet-B0 stage-FEATURE_STAGE feature map and the gradient is a
-     fixed 3x3 Sobel operator.
-
-  2. CONFOUNDED INITIALIZATION — exp5b warm-started from the exp1 champion
-     checkpoint while the baseline trained from ImageNet weights. Here both
-     arms of every cycle start from IDENTICAL ImageNet-pretrained weights,
-     identical classifier init (same seed), and identical data order. The
-     only difference between arms is the physics term.
-
-  3. TEST-SET SELECTION — exp5b picked the best epoch by test F1. Here a
-     stratified 15% validation split is carved from train; the best epoch is
-     selected on validation F1 and the test set is evaluated exactly once
-     per arm, on that state.
-
-A gradient-flow assertion runs before any training: if the physics term
-contributes zero gradient to the model parameters, the script aborts.
-
-Protocol: N_CYCLES=30 paired cycles, seeds 200..229 (disjoint from exp1/exp5
-seed pools). Statistics: paired t-test across seeds + variance comparison.
-
-Outputs:
-    Results/exp11_paired_results.csv     -- one row per (cycle, arm)
-    Results/exp11_epoch_log.csv          -- per-epoch validation metrics
-    Results/exp11_paired_report.txt      -- statistical report
-    Models/Exp11_PGML_Champion.pth       -- best pgml arm state (by test F1)
+Outputs (kept separate from the v1 run so both are preserved):
+    Results/exp11v2_paired_results.csv
+    Results/exp11v2_epoch_log.csv
+    Results/exp11v2_paired_report.txt
+    Models/Exp11v2_PGML_Champion.pth
     pgml_agent_progress.log (appended)
 
 Run from TF_Me project root:
-    python exp11_paired_validation.py            # full n=30 (resume-safe)
-    python exp11_paired_validation.py --smoke    # 1 cycle, 2 epochs, 25 batches
+    python exp11_paired_validation_v2.py            # full n=30 (resume-safe)
+    python exp11_paired_validation_v2.py --smoke    # 1 cycle, 2 epochs, 25 batches
 """
 
 import sys
@@ -88,10 +69,10 @@ LR            = 1e-3
 CYCLE_SEEDS   = list(range(200, 200 + N_CYCLES))
 
 SUFFIX       = "_smoke" if SMOKE else ""
-SUMMARY_CSV  = os.path.join(RESULT_DIR, f"exp11_paired_results{SUFFIX}.csv")
-EPOCH_CSV    = os.path.join(RESULT_DIR, f"exp11_epoch_log{SUFFIX}.csv")
-REPORT_TXT   = os.path.join(RESULT_DIR, f"exp11_paired_report{SUFFIX}.txt")
-CHAMPION_PTH = os.path.join(MODEL_DIR, "Exp11_PGML_Champion.pth")
+SUMMARY_CSV  = os.path.join(RESULT_DIR, f"exp11v2_paired_results{SUFFIX}.csv")
+EPOCH_CSV    = os.path.join(RESULT_DIR, f"exp11v2_epoch_log{SUFFIX}.csv")
+REPORT_TXT   = os.path.join(RESULT_DIR, f"exp11v2_paired_report{SUFFIX}.txt")
+CHAMPION_PTH = os.path.join(MODEL_DIR, "Exp11v2_PGML_Champion.pth")
 
 os.makedirs(MODEL_DIR,  exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
@@ -212,7 +193,7 @@ def make_loaders(seed):
 
 
 # ============================================================================
-# EVALUATION
+# EVALUATION — positive class = DEFECTIVE (item 7a fix)
 # ============================================================================
 def evaluate(model, loader):
     model.eval()
@@ -221,14 +202,14 @@ def evaluate(model, loader):
         for X, y in loader:
             X, y = X.to(DEVICE), y.to(DEVICE)
             _, p = model(X).max(1)
-            tp += ((p == 1) & (y == 1)).sum().item()
-            fp += ((p == 1) & (y == 0)).sum().item()
-            fn += ((p == 0) & (y == 1)).sum().item()
-            tn += ((p == 0) & (y == 0)).sum().item()
+            tp += ((p == DEF_CLASS) & (y == DEF_CLASS)).sum().item()  # caught defect
+            fp += ((p == DEF_CLASS) & (y == OK_CLASS)).sum().item()   # false reject
+            fn += ((p == OK_CLASS)  & (y == DEF_CLASS)).sum().item()  # missed defect
+            tn += ((p == OK_CLASS)  & (y == OK_CLASS)).sum().item()   # correctly passed
     N   = tp + tn + fp + fn
     acc = (tp + tn) / N * 100 if N else 0.0
     pr  = tp / (tp + fp) * 100 if (tp + fp) else 0.0
-    rc  = tp / (tp + fn) * 100 if (tp + fn) else 0.0
+    rc  = tp / (tp + fn) * 100 if (tp + fn) else 0.0   # now the DEFECT catch rate
     f1  = 2 * pr * rc / (pr + rc) if (pr + rc) else 0.0
     return acc, rc, f1
 
@@ -315,12 +296,12 @@ def write_report():
         return np.array([float(by_arm[arm][c][key]) for c in common])
 
     lines = ["=" * 70,
-             "  exp11 PAIRED VALIDATION REPORT — corrected protocol",
+             "  exp11v2 PAIRED VALIDATION REPORT — recall = DEFECTIVE-class catch rate",
              f"  alpha={ALPHA_STAR}  margin={MARGIN}  feature_stage={FEATURE_STAGE}",
              f"  epochs={EPOCHS}  batch={BATCH_SIZE}  val_fraction={VAL_FRACTION}",
              f"  completed pairs: n={len(common)}",
              "=" * 70, ""]
-    for key, label in [("acc", "Accuracy"), ("recall", "Recall"), ("f1", "F1-Score")]:
+    for key, label in [("acc", "Accuracy"), ("recall", "Recall (defect catch rate)"), ("f1", "F1-Score")]:
         b, p = vec("baseline", key), vec("pgml", key)
         d = p - b
         if len(common) >= 2:
@@ -346,7 +327,7 @@ def write_report():
 # ============================================================================
 def main():
     print("=" * 70)
-    print("  exp11_paired_validation.py — corrected PGML paired protocol"
+    print("  exp11_paired_validation_v2.py — recall-fixed PGML paired protocol"
           + ("  [SMOKE]" if SMOKE else ""))
     print(f"  DEVICE={DEVICE}  alpha={ALPHA_STAR}  margin={MARGIN}  "
           f"stage={FEATURE_STAGE}  cycles={N_CYCLES}  epochs={EPOCHS}")
@@ -406,8 +387,8 @@ def main():
 
     total_h = (time.time() - t_wall) / 3600
     if not SMOKE:
-        log_append(f"\n[exp11 COMPLETE — {time.strftime('%Y-%m-%d %H:%M')}]\n"
-                   f"  Corrected paired protocol, n={N_CYCLES}. "
+        log_append(f"\n[exp11v2 COMPLETE — {time.strftime('%Y-%m-%d %H:%M')}]\n"
+                   f"  Recall-fixed paired protocol, n={N_CYCLES}. "
                    f"Report: {REPORT_TXT}. Wall time {total_h:.2f}h")
     print(f"\n[Done] Wall time: {total_h:.2f}h")
 

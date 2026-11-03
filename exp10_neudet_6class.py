@@ -23,12 +23,14 @@ import torch.optim as optim
 import torchvision.models as models
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
+
+from exp10d_multiseed import balanced_sampler
 from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score
 
 DEVICE  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ROOT    = "NEU-DET_ByClass"
-WEIGHTS = os.path.join("Models", "PGML_Champion_EfficientNetB0.pth")
+WEIGHTS = os.path.join("Models", "Gate1_Champion_EfficientNetB0.pth")
 SEED    = 42
 EPOCHS  = 5
 BATCH   = 32
@@ -50,7 +52,8 @@ def loaders(fraction):
     else:
         n_tr = int(fraction * len(ds))
         tr_idx, te_idx = idx[:n_tr], idx[n_tr:]
-    tr = DataLoader(Subset(ds, tr_idx), batch_size=BATCH, shuffle=True,
+    tr = DataLoader(Subset(ds, tr_idx), batch_size=BATCH,
+                    sampler=balanced_sampler(ds, tr_idx, SEED),
                     num_workers=4, pin_memory=True)
     te = DataLoader(Subset(ds, te_idx), batch_size=BATCH, shuffle=False,
                     num_workers=4, pin_memory=True)

@@ -25,7 +25,7 @@ evaluation (Experiment 5).
 Both L_CE and the corrected feature-space L_SSF are imported verbatim from
 exp11_paired_validation_v2.py, so this measures the exact loss pair the paper
 reports. Two parameter states are evaluated: ImageNet-initialized (the shared
-start of both paired arms) and the deployed CE-trained champion.
+start of both paired arms) and the CE-trained Gate-1 champion.
 
 Outputs: Results/exp13_gradient_alignment.csv, Results/exp13_report.txt
 """
@@ -41,7 +41,7 @@ import exp11_paired_validation_v2 as E
 DEVICE = E.DEVICE
 N_BATCHES = 30
 SEED = 42
-WARM = os.path.join("Models", "PGML_Champion_EfficientNetB0.pth")
+WARM = os.path.join("Models", "Gate1_Champion_EfficientNetB0.pth")
 
 
 def flat_grad(loss, params):

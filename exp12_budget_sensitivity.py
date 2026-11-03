@@ -7,7 +7,8 @@ Budgets {5, 10, 15, 20}% on NEU-DET / DAGM / Kolektor, CE-only head fine-tune
 (5 epochs, frozen backbone), mirroring exp10's pipeline with one protocol
 difference: the held-out test set is FIXED across budgets (the last 15% of the
 SEED-42 permutation, identical to exp10's 100%-data condition), so accuracies
-are comparable across the budget axis.
+are comparable across the budget axis. Same class-balanced sampler and metrics
+(accuracy, balanced accuracy, majority-class rate) as exp10d_multiseed.py.
 
 Outputs: Results/exp12_budget_sensitivity.csv, Results/exp12_report.txt
 """
@@ -21,8 +22,10 @@ import torchvision.models as models
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
 
+from exp10d_multiseed import balanced_sampler, evaluate
+
 DEVICE   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-WEIGHTS  = os.path.join("Models", "PGML_Champion_EfficientNetB0.pth")
+WEIGHTS  = os.path.join("Models", "Gate1_Champion_EfficientNetB0.pth")
 SEED     = 42
 EPOCHS   = 5
 BATCH    = 32
@@ -48,7 +51,8 @@ def loaders(root, fraction):
     pool      = idx[:-n_te]
     n_tr      = max(1, int(fraction * len(ds)))
     train_idx = pool[:n_tr]
-    tr = DataLoader(Subset(ds, train_idx), batch_size=BATCH, shuffle=True,
+    tr = DataLoader(Subset(ds, train_idx), batch_size=BATCH,
+                    sampler=balanced_sampler(ds, train_idx, SEED),
                     num_workers=4, pin_memory=True)
     te = DataLoader(Subset(ds, test_idx), batch_size=BATCH, shuffle=False,
                     num_workers=4, pin_memory=True)
@@ -63,16 +67,6 @@ def champion(n_cls):
         p.requires_grad_(False)
     m.classifier[1] = nn.Linear(m.classifier[1].in_features, n_cls)
     return m.to(DEVICE)
-
-
-def evaluate(model, loader):
-    model.eval(); ok = tot = 0
-    with torch.no_grad():
-        for X, y in loader:
-            X, y = X.to(DEVICE), y.to(DEVICE)
-            ok  += (model(X).argmax(1) == y).sum().item()
-            tot += y.numel()
-    return ok / tot * 100
 
 
 def main():
@@ -92,15 +86,15 @@ def main():
                     opt.zero_grad()
                     loss = crit(model(X), y)
                     loss.backward(); opt.step()
-            acc = evaluate(model, te)
-            rows.append({"dataset": name, "budget": b, "acc": acc})
-            print(f"{name:9s} budget={int(b*100):3d}%  acc={acc:.2f}%  "
+            acc, bal, maj = evaluate(model, te)
+            rows.append({"dataset": name, "budget": b, "acc": acc, "bal": bal, "maj": maj})
+            print(f"{name:9s} budget={int(b*100):3d}%  acc={acc:.2f}%  bal={bal:.2f}%  maj={maj:.2f}%  "
                   f"({time.time()-t0:.0f}s)", flush=True)
             del model; torch.cuda.empty_cache()
 
     with open("Results/exp12_budget_sensitivity.csv", "w", newline="",
               encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["dataset", "budget", "acc"])
+        w = csv.DictWriter(f, fieldnames=["dataset", "budget", "acc", "bal", "maj"])
         w.writeheader(); w.writerows(rows)
 
     lines = ["exp12 — budget sensitivity (champion init, CE head FT, 5 epochs,",
@@ -108,7 +102,8 @@ def main():
     for name, _ in DATASETS:
         vals = [r for r in rows if r["dataset"] == name]
         lines.append(f"  {name:9s}: " + "  ".join(
-            f"{int(r['budget']*100)}%={r['acc']:.2f}%" for r in vals))
+            f"{int(r['budget']*100)}%={r['acc']:.2f}% (bal {r['bal']:.2f}%)" for r in vals)
+            + f"  [held-out majority rate {vals[0]['maj']:.2f}%]")
     rep = "\n".join(lines)
     open("Results/exp12_report.txt", "w", encoding="utf-8").write(rep)
     print("\n" + rep)

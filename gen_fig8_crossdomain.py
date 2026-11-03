@@ -37,7 +37,7 @@ series = [("ImageNet-init, 15% budget", "imagenet", 0.15, "#888888", ""),
           ("ImageNet-init, 100% data", "imagenet", 1.00, "#BBBBBB", "//"),
           ("Champion-init, 100% data", "champion", 1.00, "#5B9BD5", "//")]
 for i, (lbl, init, budget, c, h) in enumerate(series):
-    mus, sds = zip(*[stat(ds, init, budget, "acc_ft") for ds in DS])
+    mus, sds = zip(*[stat(ds, init, budget, "bal_ft") for ds in DS])
     off = (i - 1.5) * w
     bars = ax.bar(x + off, mus, w, yerr=sds, capsize=4, label=lbl, color=c,
                   edgecolor="black", lw=0.7, hatch=h, alpha=0.85)
@@ -46,9 +46,9 @@ for i, (lbl, init, budget, c, h) in enumerate(series):
                 ha="center", va="bottom", fontsize=8, fontweight="bold",
                 color=c, rotation=90)
 ax.set_xticks(x); ax.set_xticklabels(LBL, fontsize=11, fontweight="bold")
-ax.set_ylabel("Accuracy (%)"); ax.set_ylim(0, 118)
-ax.set_title("Fine-Tune Accuracy by Initialization and Budget")
-ax.legend(fontsize=9, loc="lower right", ncol=2)
+ax.set_ylabel("Balanced accuracy (%)"); ax.set_ylim(0, 118)
+ax.set_title("Fine-Tune Balanced Accuracy by Initialization and Budget")
+ax.legend(fontsize=9, loc="upper right", ncol=2)
 ax.grid(axis="y", ls="--", alpha=0.4); ax.set_axisbelow(True)
 
 ax = axes[1]
@@ -69,7 +69,7 @@ ax.legend(fontsize=9); ax.grid(axis="y", ls="--", alpha=0.4)
 ax.set_axisbelow(True)
 
 plt.tight_layout()
-plt.savefig("Figures/Figure_Exp10R_Champion_vs_Baseline.png", dpi=150,
+plt.savefig("Figures/Figure_Exp10R_Champion_vs_Baseline.png", dpi=350,
             bbox_inches="tight")
 plt.close()
 print("written Figures/Figure_Exp10R_Champion_vs_Baseline.png")

@@ -12,5 +12,7 @@ pillow==12.1.1
 scikit-learn==1.8.0
 pandas==2.3.3
 seaborn==0.13.2
+# Experiment 16 only (backbone profiling; no pretrained weights are downloaded)
+timm==1.0.30
 # optional: GPU temperature logging in exp8 (falls back gracefully if absent)
 # nvidia-ml-py

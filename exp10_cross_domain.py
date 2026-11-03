@@ -8,12 +8,11 @@ and Silhouette latent-space analysis. NEU-DET (native 6-class) is handled by
 exp10_neudet_6class.py.
 
 Each dataset is seeded independently (SEED=42), so results do not depend on
-registry order. The deployed champion checkpoint retains its historical
-filename (Models/PGML_Champion_EfficientNetB0.pth); see README.
+registry order. The casting-pretrained backbone is the Gate-1 champion
+(Models/Gate1_Champion_EfficientNetB0.pth, selected on validation only); see README.
 
 Outputs:
   Figures/Figure_Exp10R_{Dataset}_tSNE.png
-  Figures/Figure_Exp10R_Champion_vs_Baseline.png (script-level summary)
   Results/exp10R_crossdomain.csv / _report.txt
 
 Run from repository root:  python exp10_cross_domain.py
@@ -33,6 +32,8 @@ import torch.optim as optim
 import torchvision.models as models
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
+
+from exp10d_multiseed import balanced_sampler
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -55,7 +56,7 @@ RESULT_DIR      = "Results"
 FIG_DIR         = "Figures"
 LOG_FILE        = "pgml_agent_progress.log"
 
-CHAMPION_WEIGHTS    = os.path.join(MODEL_DIR, "PGML_Champion_EfficientNetB0.pth")
+CHAMPION_WEIGHTS    = os.path.join(MODEL_DIR, "Gate1_Champion_EfficientNetB0.pth")
 
 FINETUNE_EPOCHS = 5
 TRAIN_FRACTION  = 0.15
@@ -73,14 +74,6 @@ DATASET_REGISTRY = [
     {"name": "DAGM",     "root": "DAGM_Cleaned", "binary": True, "color": "#EA0CD0"},
     {"name": "Kolektor", "root": "Kolektor",     "binary": True, "color": "#D41212"},
 ]
-
-# exp3 EfficientNet-B0 baseline results for comparison figure
-EXP3_BASELINE = {
-    "NEU-DET":  {"acc_zs": 76.99, "acc_ft": 80.00, "sil_before": -0.0208, "sil_after": -0.0033},
-    "DAGM":     {"acc_zs": 86.85, "acc_ft": 86.09, "sil_before":  0.0190, "sil_after":  0.0852},
-    "Kolektor": {"acc_zs": 69.03, "acc_ft": 89.13, "sil_before":  0.2239, "sil_after":  0.1983},
-}
-
 
 # ============================================================================
 # HELPERS
@@ -106,13 +99,15 @@ def get_loaders(root, fraction=TRAIN_FRACTION):
     if fraction >= 1.0:
         # 100% data: use all samples for fine-tuning; fixed held-out test set (last 15%)
         n_te  = max(1, int(0.15 * len(ds)))
-        tr_loader = DataLoader(Subset(ds, idx[:-n_te]), batch_size=BATCH_SIZE, shuffle=True,
+        tr_loader = DataLoader(Subset(ds, idx[:-n_te]), batch_size=BATCH_SIZE,
+                               sampler=balanced_sampler(ds, idx[:-n_te], SEED),
                                num_workers=4, pin_memory=pin)
         te_loader = DataLoader(Subset(ds, idx[-n_te:]),  batch_size=BATCH_SIZE, shuffle=False,
                                num_workers=4, pin_memory=pin)
     else:
         n_tr  = int(fraction * len(ds))
-        tr_loader = DataLoader(Subset(ds, idx[:n_tr]),  batch_size=BATCH_SIZE, shuffle=True,
+        tr_loader = DataLoader(Subset(ds, idx[:n_tr]),  batch_size=BATCH_SIZE,
+                               sampler=balanced_sampler(ds, idx[:n_tr], SEED),
                                num_workers=4, pin_memory=pin)
         te_loader = DataLoader(Subset(ds, idx[n_tr:]),  batch_size=BATCH_SIZE, shuffle=False,
                                num_workers=4, pin_memory=pin)
@@ -225,70 +220,6 @@ def fig_tsne(ds_name, class_names, labels, tsne_b, tsne_a,
              class_names=np.array(class_names, dtype=object))
     print(f"  [Fig] {out}")
 
-
-def fig_comparison(all_results):
-    """Grouped bar chart: PGML fine-tune vs exp3 EfficientNet-B0 baseline."""
-    ds_names = [r["ds_name"] for r in all_results]
-    x = np.arange(len(ds_names))
-    w = 0.18
-
-    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    fig.suptitle(
-        "Champion-Init vs ImageNet-Init EfficientNet-B0\n"
-        "15% Fine-Tune, 5 Epochs — Frozen Backbone",
-        fontsize=13, fontweight="bold"
-    )
-
-    # Accuracy panel
-    ax = axes[0]
-    metrics = [
-        ("ImageNet-init ZS",  [EXP3_BASELINE[d]["acc_zs"] for d in ds_names], "#AAAAAA", "//"),
-        ("ImageNet-init FT",  [EXP3_BASELINE[d]["acc_ft"] for d in ds_names], "#888888", ""),
-        ("Champion-init ZS",      [r["acc_before"] for r in all_results],          "#5B9BD5", "//"),
-        ("Champion-init FT",      [r["acc_after"]  for r in all_results],          "#2E5C8A", ""),
-    ]
-    for i, (label, vals, color, hatch) in enumerate(metrics):
-        off = (i - 1.5) * w
-        bars = ax.bar(x + off, vals, w, label=label, color=color,
-                      edgecolor="black", lw=0.7, hatch=hatch, alpha=0.85)
-        for bar, v in zip(bars, vals):
-            if not np.isnan(v):
-                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
-                        f"{v:.1f}", ha="center", va="bottom", fontsize=7.5,
-                        fontweight="bold", color=color, rotation=90)
-    ax.set_xticks(x); ax.set_xticklabels(ds_names, fontsize=12, fontweight="bold")
-    ax.set_ylabel("Accuracy (%)", fontweight="bold"); ax.set_ylim(0, 115)
-    ax.set_title("Fine-Tune Accuracy by Initialization", fontweight="bold", fontsize=11)
-    ax.legend(fontsize=9); ax.grid(axis="y", ls="--", alpha=0.4); ax.set_axisbelow(True)
-
-    # Silhouette panel
-    ax = axes[1]
-    sil_metrics = [
-        ("ImageNet-init Sil (after FT)",  [EXP3_BASELINE[d]["sil_after"]   for d in ds_names], "#888888", ""),
-        ("Champion-init Sil (after FT)",      [r["sil_after"]                  for r in all_results], "#2E5C8A", ""),
-    ]
-    for i, (label, vals, color, hatch) in enumerate(sil_metrics):
-        off = (i - 0.5) * 0.3
-        bars = ax.bar(x + off, vals, 0.3, label=label, color=color,
-                      edgecolor="black", lw=0.7, hatch=hatch, alpha=0.85)
-        for bar, v in zip(bars, vals):
-            if not np.isnan(v):
-                ax.text(bar.get_x() + bar.get_width()/2,
-                        bar.get_height() + (0.003 if bar.get_height() >= 0 else -0.01),
-                        f"{v:.3f}", ha="center",
-                        va="bottom" if bar.get_height() >= 0 else "top",
-                        fontsize=8, fontweight="bold", color=color)
-    ax.axhline(0, color="black", lw=1.0, ls="--", alpha=0.5)
-    ax.set_xticks(x); ax.set_xticklabels(ds_names, fontsize=12, fontweight="bold")
-    ax.set_ylabel("Silhouette Score (After FT)", fontweight="bold")
-    ax.set_title("Latent-Space Separability by Initialization", fontweight="bold", fontsize=11)
-    ax.legend(fontsize=9); ax.grid(axis="y", ls="--", alpha=0.4); ax.set_axisbelow(True)
-
-    plt.tight_layout()
-    out = os.path.join(FIG_DIR, "Figure_Exp10R_Champion_vs_Baseline.png")
-    plt.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
-    plt.close()
-    print(f"[Fig] {out}")
 
 # ============================================================================
 # PROCESS ONE DATASET
@@ -410,9 +341,6 @@ def run():
         print("\n[WARN] No results — check dataset paths.")
         return
 
-    # Comparison figure
-    fig_comparison(all_results)
-
     # CSV
     csv_path = os.path.join(RESULT_DIR, "exp10R_crossdomain.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as cf:
@@ -449,16 +377,8 @@ def run():
             f"  15% Budget FT    : Acc={r['acc_after']:.2f}%  Sil={r['sil_after']:.4f}\n"
             f"  100% Budget FT   : Acc={full_acc:.2f}%  (peak, not agility target)\n"
             f"  Agility gap      : {agility_gap:+.2f}pp  (price of 85% data reduction)\n"
-            f"  Sil Delta (15%)  : {r['acc_delta']:+.2f}%  Sil={r['sil_delta']:+.4f}"
+            f"  Delta vs ZS (15%): Acc={r['acc_delta']:+.2f}pp  Sil={r['sil_delta']:+.4f}"
         )
-        b = EXP3_BASELINE.get(r["ds_name"])
-        if b:
-            lines.append(
-                f"  vs Baseline FT   : {r['acc_after']:.2f}% vs {b['acc_ft']:.2f}%"
-                f"  ({r['acc_after']-b['acc_ft']:+.2f}pp)\n"
-                f"  Sil after        : {r['sil_after']:.4f} vs {b['sil_after']:.4f}"
-                f"  ({r['sil_after']-b['sil_after']:+.4f})"
-            )
 
     lines += ["", "=" * 70]
     report = "\n".join(lines)
